@@ -84,9 +84,10 @@ sub login {
 	return $res->content =~ /home">redirected/;
 }
 
-sub tree_conflicts {
+sub get_tree_conflicts {
 	my $self = shift;
-	my ($res, @list);
+	my $res;
+	my $list = Geni::List->new();
 	if ($_{collaborators}){
 		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url());
 	} else {
@@ -94,16 +95,18 @@ sub tree_conflicts {
 			. "?collaborators=true");
 	}
 	if ($res->is_success){
-		$res = $self->{json}->allow_nonref->relaxed->decode($res->decoded_content);
+		my $content = $res->decoded_content;
+		$res = $self->{json}->allow_nonref->relaxed->decode($content);
 		for (@{$res->{results}}){
-			push @list, Geni::Conflict->new(
-				managers => @{$_->{managers}},
-				profile => $_->{profile},
+			my $c = Geni::Conflict->new(
+				new_id => $_->{profile},
 				type => $_->{issue_type},
 				actor => $_->{actor}
 			);
+			$c->add_managers(@{$res->{managers}}); 
+			$list->add($c);
 		}
-		return @list;
+		return $list;
 	}
 	return 0;
 }
@@ -117,33 +120,39 @@ package Geni::Conflict;
 
 sub new {
 	my $class = shift;
-	my $self = {
-	};
+	my $self = { @_ };
 	bless $self, $class;
 	return $self;
 }
 
-sub profile {
+sub get_profile {
 	my $self = shift;
-	return Geni::Profile->new($self->profile);
+	return Geni::Profile->new($self->{new_id});
 }
 
-sub managers {
+sub get_managers {
 	my $self = shift;
-	my @managers;
-	foreach(@{$self->managers}){
-		push @managers, Geni::Profile->new($_);
+	my $list = Geni::List->new();
+	foreach(@{$self->{managers}}){
+		$list->add(Geni::Profile->new($_));
 	}
+	return $list;
 }
 
-sub type {
+sub get_type {
 	my $self = shift;
-	return $self->type;
+	return $self->{type};
 }
 
-sub actor {
+sub get_actor {
 	my $self = shift;
-	return Geni::Profile->new($self->actor);
+	return Geni::Profile->new($self->{actor});
+}
+
+sub add_managers {
+	my $self = shift;
+	push @{$self->{managers}}, @_;
+	return $self;
 }
 } # end Geni::Conflict class
 
@@ -162,6 +171,43 @@ sub new {
 	return $self;
 }
 } # end Geni::Profile class
+
+
+##############################################################################
+# Geni::List class
+##############################################################################
+{
+package Geni::List;
+
+sub new {
+	my $class = shift;
+	my $self = {};
+	@{$self->{items}} = @_;
+	bless $self, $class;
+	return $self;
+}
+
+sub get_next {
+	my $self = shift;
+	return shift @{$self->{items}}
+}
+
+sub has_next {
+	my $self = shift;
+	return $#{$self->{items}} > 0;
+}
+
+sub add {
+	my $self = shift;
+	push @{$self->{items}}, @_;
+}
+
+sub count {
+	my $self = shift;
+	return $#{$self->{items}};
+}
+
+} # end Geni::List class
 
 
 1;
