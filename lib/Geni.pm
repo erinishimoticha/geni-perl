@@ -16,6 +16,65 @@ my $VERSION = '0.01';
 # Profile APIs
 # Returns a data structure containing the immediate family of the requested
 # profile.
+sub new {
+	my $class = shift;
+	($self->{user}, $self->{pass}) = (shift, shift);
+	my $self = { @_ };
+	$self->{json} = new JSON;
+	if (!$self->{user} || !$self->{pass}){
+		$Geni::errstr = "Username and password are required parameters to "
+			. "Geni::new().";
+		return 0;
+	} else {
+		bless $self, $class;
+		$self->login() or $Geni::errstr = "Login failed!";
+		return $self;
+	}
+}
+
+sub get_user {
+	my $self = shift;
+	return $self->{user};
+}
+
+sub login {
+	my $self = shift;
+	$self->{ua} = LWP::UserAgent->new();
+	$self->{ua}->cookie_jar(HTTP::Cookies->new());
+	my $res = $self->{ua}->post("https://www.geni.com/login/in?username="
+		. $self->{user} . "&password=" . $self->{pass});
+	return $res->content =~ /home">redirected/;
+}
+
+sub get_tree_conflicts {
+	my $self = shift;
+	my $res;
+	my $list = Geni::List->new();
+	if ($self->{collaborators}){
+		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url());
+	} else {
+		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url()
+			. "?collaborators=true");
+	}
+	if ($res->is_success){
+		my $content = $res->decoded_content;
+		$res = $self->{json}->allow_nonref->relaxed->decode($content);
+		for (@{$res->{results}}){
+			my $c = Geni::Conflict->new(
+				new_id => $_->{profile},
+				type => $_->{issue_type},
+				cur_page_num => $_->{page},
+				next_page_url=> $_->{next_page},
+				actor => $_->{actor}
+			);
+			$c->_add_managers(@{$res->{managers}}); 
+			$list->add($c);
+		}
+		return $list;
+	}
+	return 0;
+}
+
 sub _profile_get_immediate_family_url {
 	"https://www.geni.com/api/profile/immediate-family?only_ids=true";
 }
@@ -43,73 +102,18 @@ sub _profile_do_merge_url($$) {
 }
 # Project APIs
 # Returns a list of users collaborating on a project.
-sub _project_get_collaborators_url {
-	"https://www.geni.com/api/project-6/collaborators?only_ids=true";
+sub _project_get_collaborators_url($) {
+	"https://www.geni.com/api/project-$[0]/collaborators?only_ids=true";
 }
 # Returns a list of profiles tagged in a project.
-sub _project_get_profiles_url {
-	"https://www.geni.com/api/project-6/profiles?only_ids=true";
+sub _project_get_profiles_url($) {
+	"https://www.geni.com/api/project-$[0]/profiles?only_ids=true";
 }
 # Returns a list of users following a project.
-sub _project_get_followers_url {
-	"https://www.geni.com/api/project-6/followers?only_ids=true";
+sub _project_get_followers_url($) {
+	"https://www.geni.com/api/project-$[0]/followers?only_ids=true";
 }
 
-sub new {
-	my $class = shift;
-	my $self = {};
-	($self->{user}, $self->{pass}) = (shift, shift);
-	$self->{json} = new JSON;
-	if (!$self->{user} || !$self->{pass}){
-		$Geni::errstr = "Username and password are required parameters to "
-			. "Geni::new().";
-		return 0;
-	} else {
-		bless $self, $class;
-		return $self;
-	}
-}
-
-sub username {
-	my $self = shift;
-	return $self->{user};
-}
-
-sub login {
-	my $self = shift;
-	$self->{ua} = LWP::UserAgent->new();
-	$self->{ua}->cookie_jar(HTTP::Cookies->new());
-	my $res = $self->{ua}->post("https://www.geni.com/login/in?username="
-		. $self->{user} . "&password=" . $self->{pass});
-	return $res->content =~ /home">redirected/;
-}
-
-sub get_tree_conflicts {
-	my $self = shift;
-	my $res;
-	my $list = Geni::List->new();
-	if ($_{collaborators}){
-		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url());
-	} else {
-		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url()
-			. "?collaborators=true");
-	}
-	if ($res->is_success){
-		my $content = $res->decoded_content;
-		$res = $self->{json}->allow_nonref->relaxed->decode($content);
-		for (@{$res->{results}}){
-			my $c = Geni::Conflict->new(
-				new_id => $_->{profile},
-				type => $_->{issue_type},
-				actor => $_->{actor}
-			);
-			$c->add_managers(@{$res->{managers}}); 
-			$list->add($c);
-		}
-		return $list;
-	}
-	return 0;
-}
 } # end Geni class
 
 ##############################################################################
@@ -117,6 +121,7 @@ sub get_tree_conflicts {
 ##############################################################################
 {
 package Geni::Conflict;
+my $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
@@ -149,7 +154,12 @@ sub get_actor {
 	return Geni::Profile->new($self->{actor});
 }
 
-sub add_managers {
+sub get_page_num {
+	my $self = shift;
+	return $self->{cur_page_num};
+}
+
+sub _add_managers {
 	my $self = shift;
 	push @{$self->{managers}}, @_;
 	return $self;
@@ -161,6 +171,7 @@ sub add_managers {
 ##############################################################################
 {
 package Geni::Profile;
+my $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
@@ -178,6 +189,7 @@ sub new {
 ##############################################################################
 {
 package Geni::List;
+my $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
@@ -212,8 +224,6 @@ sub count {
 
 1;
 __END__
-# Below is stub documentation for your module. You'd better edit it!
-
 =head1 NAME
 
 Geni - Perl extension for Geni.com
@@ -221,22 +231,33 @@ Geni - Perl extension for Geni.com
 =head1 SYNOPSIS
 
 	use Geni;
-	my $geni = new Geni($username, $password);
-	my @conflicts = $geni->conflicts();
+
+	my $geni = new Geni($username, $password, collaborators => 1);
 
 =head1 DESCRIPTION
 
-Use this module to manipulate Geni profiles.
+Use this module to manipulate Geni profiles and examine profile conflicts.  This module contains four classes:  Geni, Geni::List, Geni::Profile, and Geni::Conflict.
 
 =head1 METHODS
 
-=head2 $geni->new($username, $password)
+=head2 Geni->new($username, $password)
+
+Returns a Geni object or 0 if login credentials were not supplied or login fails. Optional argument "collaborators" specifies whether to retrieve collaborator conflicts or only your own.
+
 =cut
 
-=head2 $geni->login()
+=head2 $geni->get_tree_conflicts()
+
+Returns a Geni::List of Geni::Conflict objects.  Access by using $list->has_next() and $list->next().
+
+	my $list = $geni->conflicts();
+	while(my $conflict = $list->get_next()){
+		# do something
+	}
+
 =cut
 
-=head2 $geni->username()
+=head2 $geni->get_user()
 
 Returns Geni username.
 
@@ -244,11 +265,12 @@ Returns Geni username.
 
 =head1 SEEALSO
 
-GitHub
+GitHub: https://github.com/erinspice/geni-perl
 
 =head1 AUTHOR
 
 Erin Spiceland <lt>erin@thespicelands.com<gt>
+Erin is a software developer and part-time amateur genealogist, as well as a Geni Curator.
 
 =head1 COPYRIGHT AND LICENSE
 
