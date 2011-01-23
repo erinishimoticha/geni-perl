@@ -18,8 +18,8 @@ my $VERSION = '0.01';
 # profile.
 sub new {
 	my $class = shift;
-	($self->{user}, $self->{pass}) = (shift, shift);
 	my $self = { @_ };
+	($self->{user}, $self->{pass}) = (shift, shift);
 	$self->{json} = new JSON;
 	if (!$self->{user} || !$self->{pass}){
 		$Geni::errstr = "Username and password are required parameters to "
@@ -236,19 +236,24 @@ Geni - Perl extension for Geni.com
 
 =head1 DESCRIPTION
 
-Use this module to manipulate Geni profiles and examine profile conflicts.  This module contains four classes:  Geni, Geni::List, Geni::Profile, and Geni::Conflict.
+Use this module to manipulate Geni profiles and examine profile conflicts.
+This module contains four classes:  Geni, Geni::List, Geni::Profile, and
+Geni::Conflict.
 
 =head1 METHODS
 
 =head2 Geni->new($username, $password)
 
-Returns a Geni object or 0 if login credentials were not supplied or login fails. Optional argument "collaborators" specifies whether to retrieve collaborator conflicts or only your own.
+Returns a Geni object or 0 if login credentials were not supplied or login
+fails. Optional argument "collaborators" specifies whether to retrieve
+collaborator conflicts or only your own.
 
 =cut
 
 =head2 $geni->get_tree_conflicts()
 
-Returns a Geni::List of Geni::Conflict objects.  Access by using $list->has_next() and $list->next().
+Returns a Geni::List of Geni::Conflict objects.  Access by using
+$list->has_next() and $list->next().
 
 	my $list = $geni->conflicts();
 	while(my $conflict = $list->get_next()){
@@ -270,7 +275,8 @@ GitHub: https://github.com/erinspice/geni-perl
 =head1 AUTHOR
 
 Erin Spiceland <lt>erin@thespicelands.com<gt>
-Erin is a software developer and part-time amateur genealogist, as well as a Geni Curator.
+Erin is a software developer and part-time amateur genealogist, as well as
+a Geni Curator.
 
 =head1 COPYRIGHT AND LICENSE
 
