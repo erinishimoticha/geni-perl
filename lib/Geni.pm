@@ -150,7 +150,7 @@ sub new {
 
 sub get_profile {
 	my $self = shift;
-	return Geni::Profile->new(new_id => $self->{focus}, geni => $self->{geni});
+	return Geni::Profile->new(id => $self->{focus}, geni => $self->{geni});
 }
 
 sub get_managers {
@@ -158,8 +158,8 @@ sub get_managers {
 	my $list = Geni::List->new();
 	foreach my $id (@{$self->{managers}}){
 		$id =~ /^profile-/i
-			? $list->add(Geni::Profile->new( new_id => $_, geni => $self->{geni}))
-			: $list->add(Geni::Profile->new( old_id => $_, geni => $self->{geni}));
+			? $list->add(Geni::Profile->new( id => $id, geni => $self->{geni}))
+			: $list->add(Geni::Profile->new( guid => $id, geni => $self->{geni}));
 	}
 	return $list;
 }
@@ -171,7 +171,7 @@ sub get_type {
 
 sub get_actor {
 	my $self = shift;
-	return Geni::Profile->new($self->{actor});
+	return Geni::Profile->new(id => $self->{actor});
 }
 
 sub get_page_num {
@@ -182,31 +182,32 @@ sub get_page_num {
 sub fetch_conflict_array {
 	my $self = shift;
 	my $profile = $self->get_profile();
-	print "profile is $profile\n";
-	if($#{$profile->{relationships}} <= 0){
-		#print "url from within conflicts ", $self->{geni}->_profile_get_immediate_family_url($profile->get_id()), "\n";
+	if ($#{$profile->{relationships}} <= 0) {
 		my $j = $self->{geni}->_get_results($self->{geni}->_profile_get_immediate_family_url($profile->get_id()))
 			or return 0;
-		my @managers = delete(@{$j->{focus}->{managers}}[0..5000]);
-		print "focus is ", @{$j->{focus}}, "\n";
-		#$self->{profile} = Geni::Profile->new(@{$j->{focus}});#, geni => $self->{geni});
-		#$self->{profile}->_add_managers(@managers);
-		foreach my $node (@{$j->{nodes}}){
-			print "node is $_\n";
+		my @managers = delete(@{$j->{focus}->{managers}}[0..200]);
+		$self->{profile} = Geni::Profile->new(
+				map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}},
+			geni => $self->{geni});
+		$self->{profile}->_add_managers(@managers);
+		print "profile id is ", $self->{profile}->get_id(), "\n";
+		my $family;
+		foreach my $nodetype (keys %{$j->{nodes}}) {
+			print "node $nodetype\n";
+			if ($nodetype =~ /union-(\d+)/i) {
+				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
+					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
+					print "focus is a child in $nodetype\n";
+				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
+					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
+					print "focus is a partner in $nodetype\n";
+				}
+				#$family = Geni::Family->new( type => "union", id => $1 );
+				#foreach my $edge (keys %{$j->{nodes}->{$nodetype}->{edges}}) {
+				#	print "\tedge is $edge is a ", ${$j->{nodes}->{$nodetype}->{edges}->{$edge}}{"rel"}, "\n";
+				#}
+			}
 		}
-		
-		#foreach(@{$j->{results}}){
-		#	print ".\n";
-		#	my $c = Geni::Conflict->new(
-		#		geni => $self,
-		#		new_id => $_->{profile},
-		#		type => $_->{issue_type},
-		#		actor => $_->{actor}
-		#	);
-		#	$c->_add_managers(@{$_->{managers}}); 
-		#	$list->add($c);
-		#}
-		return @{$j->{results}};
 	}
 	return 0;
 }
@@ -228,7 +229,6 @@ our $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
-	print "odd numbered array is @_\n";
 	my $self = { @_ };
 	bless $self, $class;
 	return $self;
@@ -236,7 +236,7 @@ sub new {
 
 sub get_id(){
 	my $self = shift;
-	return $self->{new_id} ? $self->{new_id} : $self->{old_id};
+	return $self->{id} ? $self->{id} : $self->{guid};
 }
 
 sub _add_managers {
