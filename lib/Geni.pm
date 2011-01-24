@@ -12,7 +12,7 @@ use vars qw($VERSION $errstr);
 ##############################################################################
 {
 package Geni;
-my $VERSION = '0.01';
+our $VERSION = '0.01';
 # Profile APIs
 # Returns a data structure containing the immediate family of the requested
 # profile.
@@ -48,70 +48,88 @@ sub login {
 
 sub get_tree_conflicts {
 	my $self = shift;
-	my $res;
 	my $list = Geni::List->new();
-	if ($self->{collaborators}){
-		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url());
-	} else {
-		$res = $self->{ua}->get($self->_profile_get_tree_conflicts_url()
-			. "?collaborators=true");
+	my $j = $self->_get_results(_profile_get_tree_conflicts_url())
+		or return 0;
+	foreach(@{$j->{results}}){
+		my $c = Geni::Conflict->new(
+			geni => $self,
+			focus => $_->{profile},
+			type => $_->{issue_type},
+			actor => $_->{actor}
+		);
+		$c->_add_managers(@{$_->{managers}}); 
+		$list->add($c);
 	}
-	if ($res->is_success){
-		my $content = $res->decoded_content;
-		$res = $self->{json}->allow_nonref->relaxed->decode($content);
-		for (@{$res->{results}}){
-			my $c = Geni::Conflict->new(
-				new_id => $_->{profile},
-				type => $_->{issue_type},
-				cur_page_num => $_->{page},
-				next_page_url=> $_->{next_page},
-				actor => $_->{actor}
-			);
-			$c->_add_managers(@{$res->{managers}}); 
-			$list->add($c);
-		}
-		return $list;
-	}
-	return 0;
+	$list->{cur_page_num} = $j->{page};
+	$list->{next_page_url} = $j->{next_page};
+	$list->{geni} = $self;
+	return $list;
 }
 
-sub _profile_get_immediate_family_url {
-	"https://www.geni.com/api/profile/immediate-family?only_ids=true";
+# Returns a data structure containing the immediate family of the requested profile.
+sub _profile_get_immediate_family_url($) {
+	my ($self, $profile) = (shift, shift);
+	$profile = $profile ? $profile : "profile";
+	"https://www.geni.com/api/$profile/immediate-family?only_ids=true";
 }
 # Returns a list of requested profile merges for the current user.
 sub _profile_get_merges_url {
-	"https://www.geni.com/api/profile/merges?only_ids=true";
+	my $self = shift;
+	"https://www.geni.com/api/profile/merges?only_ids=true"
+		. ($self->{collaborators} ? "&collaborators=true" : "");
 }
 # Returns a list of data conflicts for the current user.
 sub _profile_get_data_conflicts_url {
-	"https://www.geni.com/api/profile/data-conflicts?only_ids=true";
+	my $self = shift;
+	"https://www.geni.com/api/profile/data-conflicts?only_ids=true"
+		. ($self->{collaborators} ? "&collaborators=true" : "");
 }
 # Returns a list of tree conflicts for the current user.
 sub _profile_get_tree_conflicts_url {
-	"https://www.geni.com/api/profile/tree-conflicts?only_ids=true";
+	my $self = shift;
+	"https://www.geni.com/api/profile/tree-conflicts?only_ids=true"
+		. ($self->{collaborators} ? "&collaborators=true" : "");
 }
 # Returns a list of other profiles in our system matching a given profile.
 # Only users who have upgraded to a Geni Pro Account can see this list.
-sub _profile_get_tree_matches_url {
-	"https://www.geni.com/api/profile/tree-matches?only_ids=true";
+sub _profile_get_tree_matches_url($) {
+	"https://www.geni.com/api/$_[1]/tree-matches?only_ids=true";
 }
 # Will merge two profiles together if you have permission, or it will create a
 # requested merge if you don’t have edit permission on both profiles.
 sub _profile_do_merge_url($$) {
-	"https://www.geni.com/api/profile-$_[0]/merge/profile-$_[1]?only_ids=true";
+	"https://www.geni.com/api/$_[1]/merge/$_[2]?only_ids=true";
 }
 # Project APIs
 # Returns a list of users collaborating on a project.
 sub _project_get_collaborators_url($) {
-	"https://www.geni.com/api/project-$[0]/collaborators?only_ids=true";
+	"https://www.geni.com/api/project-$_[1]/collaborators?only_ids=true";
 }
 # Returns a list of profiles tagged in a project.
 sub _project_get_profiles_url($) {
-	"https://www.geni.com/api/project-$[0]/profiles?only_ids=true";
+	"https://www.geni.com/api/project-$_[1]/profiles?only_ids=true";
 }
 # Returns a list of users following a project.
 sub _project_get_followers_url($) {
-	"https://www.geni.com/api/project-$[0]/followers?only_ids=true";
+	"https://www.geni.com/api/project-$_[1]/followers?only_ids=true";
+}
+
+sub _get_results($$) {
+	my ($self, $url) = (shift, shift);
+	my $res = $self->{ua}->get($url);
+	#open LOG, ">>family.log";
+	#print LOG "$url\n";
+	if ($res->is_success){
+		my $r = $res->decoded_content;
+		#print LOG "$r\n";
+		my $j = $self->{json}->allow_nonref->relaxed->decode($r);#res->decoded_content);
+		return $j;
+	} else {
+		$Geni::errstr = $res->status_line && return 0;
+		#print LOG "$Geni::errstr\n";
+	}
+	#close LOG;
 }
 
 } # end Geni class
@@ -121,7 +139,7 @@ sub _project_get_followers_url($) {
 ##############################################################################
 {
 package Geni::Conflict;
-my $VERSION = $Geni::VERSION;
+our $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
@@ -132,14 +150,16 @@ sub new {
 
 sub get_profile {
 	my $self = shift;
-	return Geni::Profile->new($self->{new_id});
+	return Geni::Profile->new(new_id => $self->{focus}, geni => $self->{geni});
 }
 
 sub get_managers {
 	my $self = shift;
 	my $list = Geni::List->new();
-	foreach(@{$self->{managers}}){
-		$list->add(Geni::Profile->new($_));
+	foreach my $id (@{$self->{managers}}){
+		$id =~ /^profile-/i
+			? $list->add(Geni::Profile->new( new_id => $_, geni => $self->{geni}))
+			: $list->add(Geni::Profile->new( old_id => $_, geni => $self->{geni}));
 	}
 	return $list;
 }
@@ -159,11 +179,44 @@ sub get_page_num {
 	return $self->{cur_page_num};
 }
 
+sub fetch_conflict_array {
+	my $self = shift;
+	my $profile = $self->get_profile();
+	print "profile is $profile\n";
+	if($#{$profile->{relationships}} <= 0){
+		#print "url from within conflicts ", $self->{geni}->_profile_get_immediate_family_url($profile->get_id()), "\n";
+		my $j = $self->{geni}->_get_results($self->{geni}->_profile_get_immediate_family_url($profile->get_id()))
+			or return 0;
+		my @managers = delete(@{$j->{focus}->{managers}}[0..5000]);
+		print "focus is ", @{$j->{focus}}, "\n";
+		#$self->{profile} = Geni::Profile->new(@{$j->{focus}});#, geni => $self->{geni});
+		#$self->{profile}->_add_managers(@managers);
+		foreach my $node (@{$j->{nodes}}){
+			print "node is $_\n";
+		}
+		
+		#foreach(@{$j->{results}}){
+		#	print ".\n";
+		#	my $c = Geni::Conflict->new(
+		#		geni => $self,
+		#		new_id => $_->{profile},
+		#		type => $_->{issue_type},
+		#		actor => $_->{actor}
+		#	);
+		#	$c->_add_managers(@{$_->{managers}}); 
+		#	$list->add($c);
+		#}
+		return @{$j->{results}};
+	}
+	return 0;
+}
+
 sub _add_managers {
 	my $self = shift;
 	push @{$self->{managers}}, @_;
 	return $self;
 }
+
 } # end Geni::Conflict class
 
 ##############################################################################
@@ -171,25 +224,67 @@ sub _add_managers {
 ##############################################################################
 {
 package Geni::Profile;
-my $VERSION = $Geni::VERSION;
+our $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
-	my $self = {
-		id => shift
-	};
+	print "odd numbered array is @_\n";
+	my $self = { @_ };
 	bless $self, $class;
 	return $self;
 }
+
+sub get_id(){
+	my $self = shift;
+	return $self->{new_id} ? $self->{new_id} : $self->{old_id};
+}
+
+sub _add_managers {
+	my $self = shift;
+	push @{$self->{managers}}, @_;
+	return $self;
+}
+
+
 } # end Geni::Profile class
 
+##############################################################################
+# Geni::Family class
+##############################################################################
+{
+package Geni::Family;
+our $VERSION = $Geni::VERSION;
+
+sub new {
+	my $class = shift;
+	my $self = { @_ };
+	bless $self, $class;
+	return $self;
+}
+
+sub get_focus {
+	my $self = shift;
+	return $self->{focus};
+}
+
+sub get_parents {
+	my $self = shift;
+	return @{$self->{parents}};
+}
+
+sub get_siblings {
+	my $self = shift;
+	return @{$self->{siblings}};
+}
+
+} # end Geni::Family class
 
 ##############################################################################
 # Geni::List class
 ##############################################################################
 {
 package Geni::List;
-my $VERSION = $Geni::VERSION;
+our $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
@@ -201,7 +296,7 @@ sub new {
 
 sub get_next {
 	my $self = shift;
-	return shift @{$self->{items}}
+	return shift @{$self->{items}};
 }
 
 sub has_next {
