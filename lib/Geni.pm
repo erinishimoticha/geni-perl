@@ -144,13 +144,22 @@ our $VERSION = $Geni::VERSION;
 sub new {
 	my $class = shift;
 	my $self = { @_ };
+	$self->{profile} = Geni::Profile->new(id => $self->{focus}, geni => $self->{geni});
+	$self->{parents} = Geni::List->new();
+	$self->{siblings} = Geni::List->new();
+	$self->{spouses} = Geni::List->new();
+	$self->{children} = Geni::List->new();
+	$self->{parents}->{type} = "parents";
+	$self->{siblings}->{type} = "siblings";
+	$self->{spouses}->{type} = "spouses";
+	$self->{children}->{type} = "children";
 	bless $self, $class;
 	return $self;
 }
 
 sub get_profile {
 	my $self = shift;
-	return Geni::Profile->new(id => $self->{focus}, geni => $self->{geni});
+	return $self->{profile};
 }
 
 sub get_managers {
@@ -179,11 +188,10 @@ sub get_page_num {
 	return $self->{cur_page_num};
 }
 
-sub fetch_conflict_array {
+sub fetch_conflict_list {
 	my $self = shift;
-	my $profile = $self->get_profile();
-	if ($#{$profile->{relationships}} <= 0) {
-		my $j = $self->{geni}->_get_results($self->{geni}->_profile_get_immediate_family_url($profile->get_id()))
+	if (!(defined $self->{resolved}) or !$self->{resolved}) {
+		my $j = $self->{geni}->_get_results($self->{geni}->_profile_get_immediate_family_url($self->get_profile()->get_id()))
 			or return 0;
 		my @managers = delete(@{$j->{focus}->{managers}}[0..200]);
 		$self->{profile} = Geni::Profile->new(
@@ -191,25 +199,44 @@ sub fetch_conflict_array {
 			geni => $self->{geni});
 		$self->{profile}->_add_managers(@managers);
 		print "profile id is ", $self->{profile}->get_id(), "\n";
-		my $family;
 		foreach my $nodetype (keys %{$j->{nodes}}) {
 			print "node $nodetype\n";
 			if ($nodetype =~ /union-(\d+)/i) {
-				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
-					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
-					print "focus is a child in $nodetype\n";
-				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
-					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
-					print "focus is a partner in $nodetype\n";
+				foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
+					if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
+						${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
+						if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
+							$self->{siblings}->add($member);
+						}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
+							$self->{parents}->add($member);
+						}
+					} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
+						${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
+						if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
+							$self->{children}->add($member);
+						}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
+							$self->{spouses}->add($member);
+						}
+					}
 				}
-				#$family = Geni::Family->new( type => "union", id => $1 );
-				#foreach my $edge (keys %{$j->{nodes}->{$nodetype}->{edges}}) {
-				#	print "\tedge is $edge is a ", ${$j->{nodes}->{$nodetype}->{edges}->{$edge}}{"rel"}, "\n";
-				#}
+
+			} elsif ($nodetype =~ /profile-(\d+)/i) {
+				#TODO make profiles
 			}
 		}
+		$self->{resolved} = 1;
 	}
-	return 0;
+	if ( defined $self->{spouses} ) {
+		return delete $self->{spouses};
+	} elsif ( defined $self->{parents} ) {
+		return delete $self->{parents};
+	} elsif ( defined $self->{children} ) {
+		return delete $self->{children};
+	} elsif ( defined $self->{siblings} ) {
+		return delete $self->{siblings};
+	} else {
+		return 0;
+	}
 }
 
 sub _add_managers {
@@ -262,6 +289,15 @@ sub new {
 	return $self;
 }
 
+sub add {
+	my $self = shift;
+	if ((shift) == "child"){
+		push @{$self->{children}}, (shift);
+	} else {
+		push @{$self->{parents}}, (shift);
+	}
+}
+
 sub get_focus {
 	my $self = shift;
 	return $self->{focus};
@@ -272,9 +308,9 @@ sub get_parents {
 	return @{$self->{parents}};
 }
 
-sub get_siblings {
+sub get_children {
 	my $self = shift;
-	return @{$self->{siblings}};
+	return @{$self->{childred}};
 }
 
 } # end Geni::Family class
