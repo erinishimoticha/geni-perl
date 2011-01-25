@@ -4,7 +4,7 @@ print "# BEGIN TEST ############################################################
 use Geni;
 print "Using Geni.pm version $Geni::VERSION", "\n";
 
-my $geni = new Geni('erin@thespicelands.com', 'msjeep') or print $Geni::errstr, "\n";
+my $geni = new Geni('erin@thespicelands.com', $ARGV[0]) or print $Geni::errstr, "\n";
 
 do_tree_conflicts();
 
