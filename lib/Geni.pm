@@ -46,24 +46,11 @@ sub login {
 	return $res->content =~ /home">redirected/;
 }
 
-sub get_tree_conflicts {
+sub get_tree_conflicts() {
 	my $self = shift;
 	my $list = Geni::List->new();
-	my $j = $self->_get_results(_profile_get_tree_conflicts_url())
-		or return 0;
-	foreach(@{$j->{results}}){
-		my $c = Geni::Conflict->new(
-			geni => $self,
-			focus => $_->{profile},
-			type => $_->{issue_type},
-			actor => $_->{actor}
-		);
-		$c->_add_managers(@{$_->{managers}}); 
-		$list->add($c);
-	}
-	$list->{cur_page_num} = $j->{page};
-	$list->{next_page_url} = $j->{next_page};
 	$list->{geni} = $self;
+	$self->_populate_tree_conflicts($list);
 	return $list;
 }
 
@@ -86,10 +73,10 @@ sub _profile_get_data_conflicts_url {
 		. ($self->{collaborators} ? "&collaborators=true" : "");
 }
 # Returns a list of tree conflicts for the current user.
-sub _profile_get_tree_conflicts_url {
+sub _profile_get_tree_conflicts_url($) {
 	my $self = shift;
 	"https://www.geni.com/api/profile/tree-conflicts?only_ids=true"
-		. ($self->{collaborators} ? "&collaborators=true" : "");
+		. ($self->{collaborators} ? "&collaborators=true" : "") . "&page=" . (shift or '1');
 }
 # Returns a list of other profiles in our system matching a given profile.
 # Only users who have upgraded to a Geni Pro Account can see this list.
@@ -130,6 +117,24 @@ sub _get_results($$) {
 		#print LOG "$Geni::errstr\n";
 	}
 	#close LOG;
+}
+
+sub _populate_tree_conflicts($$){
+	my ($self, $list) = (shift, shift);
+	my $j = $self->_get_results($list->{next_page_url} or $self->_profile_get_tree_conflicts_url(1))
+		or return 0;
+	foreach(@{$j->{results}}){
+		my $c = Geni::Conflict->new(
+			geni => $self,
+			focus => $_->{profile},
+			type => $_->{issue_type},
+			actor => $_->{actor}
+		);
+		$c->_add_managers(@{$_->{managers}}); 
+		$list->add($c);
+	}
+	$list->{cur_page_num} = $j->{page};
+	$list->{next_page_url} = $j->{next_page};
 }
 
 } # end Geni class
@@ -190,54 +195,61 @@ sub get_page_num {
 
 sub fetch_conflict_list {
 	my $self = shift;
-	if (!(defined $self->{resolved}) or !$self->{resolved}) {
-		my $j = $self->{geni}->_get_results($self->{geni}->_profile_get_immediate_family_url($self->get_profile()->get_id()))
-			or return 0;
-		my @managers = delete(@{$j->{focus}->{managers}}[0..200]);
-		$self->{profile} = Geni::Profile->new(
-				map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}},
-			geni => $self->{geni});
-		$self->{profile}->_add_managers(@managers);
-		print "profile id is ", $self->{profile}->get_id(), "\n";
-		foreach my $nodetype (keys %{$j->{nodes}}) {
-			print "node $nodetype\n";
-			if ($nodetype =~ /union-(\d+)/i) {
-				foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
-					if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
-						${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
-						if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-							$self->{siblings}->add($member);
-						}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
-							$self->{parents}->add($member);
-						}
-					} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
-						${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
-						if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-							$self->{children}->add($member);
-						}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
-							$self->{spouses}->add($member);
-						}
-					}
-				}
-
-			} elsif ($nodetype =~ /profile-(\d+)/i) {
-				#TODO make profiles
-			}
-		}
-		$self->{resolved} = 1;
+	if (!$self->{resolved}) {
+		$self->_populate_conflict_list($self->{geni}->_profile_get_immediate_family_url($self->get_profile()->get_id()));
 	}
-	if ( defined $self->{spouses} ) {
+	if ( defined $self->{spouses} && $self->{spouses}->count() > 0 ) {
 		return delete $self->{spouses};
-	} elsif ( defined $self->{parents} ) {
+	} elsif ( defined $self->{parents} && $self->{parents}->count() > 0 ) {
 		return delete $self->{parents};
-	} elsif ( defined $self->{children} ) {
+	} elsif ( defined $self->{children} && $self->{children}->count() > 0 ) {
 		return delete $self->{children};
-	} elsif ( defined $self->{siblings} ) {
+	} elsif ( defined $self->{siblings} && $self->{siblings}->count() > 0 ) {
 		return delete $self->{siblings};
 	} else {
 		return 0;
 	}
 }
+
+
+sub _populate_conflict_list($){
+	my $self = shift;
+	my $url = shift;
+	my $j = $self->{geni}->_get_results($url)
+		or return 0;
+	my @managers = delete(@{$j->{focus}->{managers}}[0..200]);
+	$self->{profile} = Geni::Profile->new(
+			map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}},
+		geni => $self->{geni});
+	$self->{profile}->_add_managers(@managers);
+	print "profile id is ", $self->{profile}->get_id(), "\n";
+	foreach my $nodetype (keys %{$j->{nodes}}) {
+		print "node $nodetype\n";
+		if ($nodetype =~ /union-(\d+)/i) {
+			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
+				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
+					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
+					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
+						$self->{siblings}->add($member);
+					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
+						$self->{parents}->add($member);
+					}
+				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
+					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
+					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
+						$self->{children}->add($member);
+					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
+						$self->{spouses}->add($member);
+					}
+				}
+			}
+		} elsif ($nodetype =~ /profile-(\d+)/i) {
+			#TODO make profiles
+		}
+	}
+	$self->{resolved} = 1;
+}
+
 
 sub _add_managers {
 	my $self = shift;
@@ -332,6 +344,11 @@ sub new {
 
 sub get_next {
 	my $self = shift;
+	if ($self->count() == 1) {
+		if(${$self->{items}}[0] && ref(${$self->{items}}[0]) eq "Geni::Conflict"){
+			$self->{geni}->_populate_tree_conflicts($self);
+		}
+	}
 	return shift @{$self->{items}};
 }
 
