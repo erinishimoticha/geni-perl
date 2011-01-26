@@ -1,7 +1,11 @@
 #!/usr/bin/perl
 
 print "# BEGIN TEST ############################################################\n";
+
 use Geni;
+binmode STDOUT, ":utf8";
+binmode STDERR, ":utf8";
+
 print "Using Geni.pm version $Geni::VERSION", "\n";
 
 my $geni = new Geni('erin@thespicelands.com', $ARGV[0]) or print $Geni::errstr, "\n";

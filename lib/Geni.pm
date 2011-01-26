@@ -5,7 +5,11 @@ use HTTP::Cookies;
 use HTTP::Response;
 use LWP::UserAgent;
 use JSON;
+use utf8;
 use vars qw($VERSION $errstr);
+
+binmode STDOUT, ":utf8";
+binmode STDERR, ":utf8";
 
 ##############################################################################
 # Geni class
@@ -105,18 +109,12 @@ sub _project_get_followers_url($) {
 sub _get_results($$) {
 	my ($self, $url) = (shift, shift);
 	my $res = $self->{ua}->get($url);
-	#open LOG, ">>family.log";
-	#print LOG "$url\n";
 	if ($res->is_success){
-		my $r = $res->decoded_content;
-		#print LOG "$r\n";
-		my $j = $self->{json}->allow_nonref->relaxed->decode($r);#res->decoded_content);
-		return $j;
+		return $self->{json}->allow_nonref->relaxed->decode($res->decoded_content);
 	} else {
-		$Geni::errstr = $res->status_line && return 0;
-		#print LOG "$Geni::errstr\n";
+		$Geni::errstr = $res->status_line;
+		return 0;
 	}
-	#close LOG;
 }
 
 sub _populate_tree_conflicts($$){
@@ -227,8 +225,11 @@ sub _populate_conflict_list($){
 	foreach my $nodetype (keys %{$j->{nodes}}) {
 		if ($nodetype =~ /union-(\d+)/i) {
 			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
+				# if the focal profile is listed as a child in this union
 				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
 					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
+
+					# if the current profile is a child, we've found a sibling or duplicate of our focal profile
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
@@ -236,6 +237,8 @@ sub _populate_conflict_list($){
 							geni => $self->{geni});
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{siblings}->add($temp_profile);
+
+					# if the current profile is a child, we've found a parent of our focal profile
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
@@ -244,8 +247,12 @@ sub _populate_conflict_list($){
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{parents}->add($temp_profile);
 					}
+
+				# if the focal profile is listed as a partner in this union
 				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
 					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
+
+					# if the current profile is a child, we've found a child of our focal profile
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
@@ -253,6 +260,8 @@ sub _populate_conflict_list($){
 							geni => $self->{geni});
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{children}->add($temp_profile);
+
+					# if the current profile is a child, we've found a spouse or duplicate of our focal profile
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
