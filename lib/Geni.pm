@@ -215,36 +215,56 @@ sub fetch_conflict_list {
 sub _populate_conflict_list($){
 	my $self = shift;
 	my $url = shift;
+	my (%temp_edges, $temp_profile);
 	my $j = $self->{geni}->_get_results($url)
 		or return 0;
-	my @managers = delete(@{$j->{focus}->{managers}}[0..200]);
+	my @managers = delete @{$j->{focus}->{managers}}[0..5000];
 	$self->{profile} = Geni::Profile->new(
 			map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}},
 		geni => $self->{geni});
 	$self->{profile}->_add_managers(@managers);
 	print "profile id is ", $self->{profile}->get_id(), "\n";
 	foreach my $nodetype (keys %{$j->{nodes}}) {
-		print "node $nodetype\n";
 		if ($nodetype =~ /union-(\d+)/i) {
 			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
 				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
 					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-						$self->{siblings}->add($member);
+						#print @number_for{qw(one two three)}; # 123
+						#print @number_for{'one','two','three'}; # 123
+						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
+						$temp_profile = Geni::Profile->new(
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
+							geni => $self->{geni});
+						%{$temp_profile->{edges}} = %temp_edges;
+						$self->{siblings}->add($temp_profile);
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
-						$self->{parents}->add($member);
+						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
+						$temp_profile = Geni::Profile->new(
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
+							geni => $self->{geni});
+						%{$temp_profile->{edges}} = %temp_edges;
+						$self->{parents}->add($temp_profile);
 					}
 				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
 					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-						$self->{children}->add($member);
+						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
+						$temp_profile = Geni::Profile->new(
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
+							geni => $self->{geni});
+						%{$temp_profile->{edges}} = %temp_edges;
+						$self->{children}->add($temp_profile);
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
-						$self->{spouses}->add($member);
+						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
+						$temp_profile = Geni::Profile->new(
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
+							geni => $self->{geni});
+						%{$temp_profile->{edges}} = %temp_edges;
+						$self->{spouses}->add($temp_profile);
 					}
 				}
 			}
-		} elsif ($nodetype =~ /profile-(\d+)/i) {
-			#TODO make profiles
 		}
 	}
 	$self->{resolved} = 1;
