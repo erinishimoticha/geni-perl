@@ -230,8 +230,6 @@ sub _populate_conflict_list($){
 				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
 					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-						#print @number_for{qw(one two three)}; # 123
-						#print @number_for{'one','two','three'}; # 123
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
 							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
