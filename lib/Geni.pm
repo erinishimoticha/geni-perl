@@ -17,6 +17,7 @@ binmode STDERR, ":utf8";
 {
 package Geni;
 our $VERSION = '0.01';
+our $geni;
 # Profile APIs
 # Returns a data structure containing the immediate family of the requested
 # profile.
@@ -32,6 +33,7 @@ sub new {
 	} else {
 		bless $self, $class;
 		$self->login() or $Geni::errstr = "Login failed!";
+		$Geni::geni = $self;
 		return $self;
 	}
 }
@@ -53,8 +55,8 @@ sub login {
 sub get_tree_conflicts() {
 	my $self = shift;
 	my $list = Geni::List->new();
-	$list->{geni} = $self;
-	$self->_populate_tree_conflicts($list);
+	$self->_populate_tree_conflicts($list) or
+		$Geni::errstr = "Attempt to [re]populate tree conflict list failed." && return 0;
 	return $list;
 }
 
@@ -106,7 +108,11 @@ sub _project_get_followers_url($) {
 	"https://www.geni.com/api/project-$_[1]/followers?only_ids=true";
 }
 
-sub _get_results($$) {
+sub _check_public_url($) {
+	"https://www.geni.com/api/profile-$_[1]/check-public";
+}
+
+sub _get_results($) {
 	my ($self, $url) = (shift, shift);
 	my $res = $self->{ua}->get($url);
 	if ($res->is_success){
@@ -117,13 +123,24 @@ sub _get_results($$) {
 	}
 }
 
+sub _post_results($) {
+	my ($self, $url) = (shift, shift);
+	my $res = $self->{ua}->post($url);
+	if ($res->is_success){
+		return $self->{json}->allow_nonref->relaxed->decode($res->decoded_content);
+	} else {
+		$Geni::errstr = $res->status_line;
+		return 0;
+	}
+}
+
 sub _populate_tree_conflicts($$){
 	my ($self, $list) = (shift, shift);
-	my $j = $self->_get_results($list->{next_page_url} or $self->_profile_get_tree_conflicts_url(1))
-		or return 0;
+	my $j = $self->_get_results(
+			$list->{next_page_url} or $self->_profile_get_tree_conflicts_url(1)
+		) or return 0;
 	foreach(@{$j->{results}}){
 		my $c = Geni::Conflict->new(
-			geni => $self,
 			focus => $_->{profile},
 			type => $_->{issue_type},
 			actor => $_->{actor}
@@ -147,7 +164,7 @@ our $VERSION = $Geni::VERSION;
 sub new {
 	my $class = shift;
 	my $self = { @_ };
-	$self->{profile} = Geni::Profile->new(id => $self->{focus}, geni => $self->{geni});
+	$self->{profile} = Geni::Profile->new(id => $self->{focus});
 	$self->{parents} = Geni::List->new();
 	$self->{siblings} = Geni::List->new();
 	$self->{spouses} = Geni::List->new();
@@ -162,16 +179,26 @@ sub new {
 
 sub get_profile {
 	my $self = shift;
+	if (!$self->{resolved}) {
+		$self->_resolve(
+			$Geni::geni->_profile_get_immediate_family_url($self->{focus})
+		);
+	}
 	return $self->{profile};
 }
 
 sub get_managers {
 	my $self = shift;
+	if (!$self->{resolved}) {
+		$self->_resolve(
+			$Geni::geni->_profile_get_immediate_family_url($self->{focus})
+		);
+	}
 	my $list = Geni::List->new();
 	foreach my $id (@{$self->{managers}}){
 		$id =~ /^profile-/i
-			? $list->add(Geni::Profile->new( id => $id, geni => $self->{geni}))
-			: $list->add(Geni::Profile->new( guid => $id, geni => $self->{geni}));
+			? $list->add(Geni::Profile->new( id => $id))
+			: $list->add(Geni::Profile->new( guid => $id));
 	}
 	return $list;
 }
@@ -186,15 +213,12 @@ sub get_actor {
 	return Geni::Profile->new(id => $self->{actor});
 }
 
-sub get_page_num {
-	my $self = shift;
-	return $self->{cur_page_num};
-}
-
-sub fetch_conflict_list {
+sub fetch_list {
 	my $self = shift;
 	if (!$self->{resolved}) {
-		$self->_populate_conflict_list($self->{geni}->_profile_get_immediate_family_url($self->get_profile()->get_id()));
+		$self->_resolve(
+			$Geni::geni->_profile_get_immediate_family_url($self->get_profile()->get_id())
+		);
 	}
 	if ( defined $self->{spouses} && $self->{spouses}->count() > 0 ) {
 		return delete $self->{spouses};
@@ -210,18 +234,16 @@ sub fetch_conflict_list {
 }
 
 
-sub _populate_conflict_list($){
+sub _resolve($){
 	my $self = shift;
 	my $url = shift;
 	my (%temp_edges, $temp_profile);
-	my $j = $self->{geni}->_get_results($url)
+	my $j = $Geni::geni->_get_results($url)
 		or return 0;
 	my @managers = delete @{$j->{focus}->{managers}}[0..5000];
 	$self->{profile} = Geni::Profile->new(
-			map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}},
-		geni => $self->{geni});
+			map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}});
 	$self->{profile}->_add_managers(@managers);
-	print "profile id is ", $self->{profile}->get_id(), "\n";
 	foreach my $nodetype (keys %{$j->{nodes}}) {
 		if ($nodetype =~ /union-(\d+)/i) {
 			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
@@ -233,8 +255,7 @@ sub _populate_conflict_list($){
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
-							geni => $self->{geni});
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{siblings}->add($temp_profile);
 
@@ -242,8 +263,7 @@ sub _populate_conflict_list($){
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
-							geni => $self->{geni});
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{parents}->add($temp_profile);
 					}
@@ -256,8 +276,7 @@ sub _populate_conflict_list($){
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
-							geni => $self->{geni});
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{children}->add($temp_profile);
 
@@ -265,8 +284,7 @@ sub _populate_conflict_list($){
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
 						$temp_profile = Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}},
-							geni => $self->{geni});
+							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{spouses}->add($temp_profile);
 					}
@@ -288,6 +306,9 @@ sub _add_managers {
 
 ##############################################################################
 # Geni::Profile class
+# managers (array), big_tree (true, false), first_name, middle_name, last_name
+# maiden_name, birth_date, birth_location, death_date, death_location, gender, 
+# url, public, locked (true, false), created_by, guid, name, id
 ##############################################################################
 {
 package Geni::Profile;
@@ -295,14 +316,98 @@ our $VERSION = $Geni::VERSION;
 
 sub new {
 	my $class = shift;
-	my $self = { @_ };
+	my $self;
+	$self = { @_ };
 	bless $self, $class;
+	if (defined $self->{public} && $self->{public} eq "false") {
+		$self->_check_public();
+	}
 	return $self;
 }
 
-sub get_id(){
+sub get_id {
 	my $self = shift;
 	return $self->{id} ? $self->{id} : $self->{guid};
+}
+
+sub get_first_name {
+	my $self = shift;
+	return $self->{first_name};
+}
+
+sub get_middle_name {
+	my $self = shift;
+	return $self->{middle_name};
+}
+
+sub get_last_name {
+	my $self = shift;
+	return $self->{last_name};
+}
+
+sub get_maiden_name {
+	my $self = shift;
+	return $self->{maiden_name};
+}
+
+sub get_display_name {
+	my $self = shift;
+	return $self->{name};
+}
+
+sub get_birth_date {
+	my $self = shift;
+	return $self->{birth_date};
+}
+
+sub get_birth_location {
+	my $self = shift;
+	return $self->{birth_location};
+}
+
+sub get_death_date {
+	my $self = shift;
+	return $self->{death_date};
+}
+
+sub get_death_location{
+	my $self = shift;
+	return $self->{death_location};
+}
+
+sub get_locked {
+	my $self = shift;
+	return $self->{locked};
+}
+
+sub is_in_big_tree {
+	my $self = shift;
+	return ($self->{big_tree} =~ /true/i);
+}
+
+sub is_claimed {
+	my $self = shift;
+	return ($self->{claimed} =~ /true/i);
+}
+
+sub is_public {
+	my $self = shift;
+	return ($self->{public} =~ /true/i);
+}
+
+sub get_gender {
+	my $self = shift;
+	return $self->{first_name};
+}
+
+sub get_creator {
+	my $self = shift;
+	return Geni::Profile->new(id => $self->{created_by});
+}
+
+sub get_guid {
+	my $self = shift;
+	return $self->{guid};
 }
 
 sub _add_managers {
@@ -311,6 +416,12 @@ sub _add_managers {
 	return $self;
 }
 
+sub _check_public {
+	my $self = shift;
+	if (defined $Geni::geni && defined $self->{public} && $self->{public} eq "false") {
+		my $j = $Geni::geni->_post_results($Geni::geni->_check_public_url($self->get_id()));
+	}
+}
 
 } # end Geni::Profile class
 
@@ -373,7 +484,7 @@ sub get_next {
 	my $self = shift;
 	if ($self->count() == 1) {
 		if(${$self->{items}}[0] && ref(${$self->{items}}[0]) eq "Geni::Conflict"){
-			$self->{geni}->_populate_tree_conflicts($self);
+			$Geni::geni->_populate_tree_conflicts($self);
 		}
 	}
 	return shift @{$self->{items}};
@@ -422,6 +533,12 @@ Geni::Conflict.
 Returns a Geni object or 0 if login credentials were not supplied or login
 fails. Optional argument "collaborators" specifies whether to retrieve
 collaborator conflicts or only your own.
+
+=cut
+
+=head2 $geni->get_user()
+
+Get username the script is currently logged in as.
 
 =cut
 
