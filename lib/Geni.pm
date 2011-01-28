@@ -32,13 +32,13 @@ sub new {
 		return 0;
 	} else {
 		bless $self, $class;
-		$self->login() or $Geni::errstr = "Login failed!";
+		$self->login() or $Geni::errstr = "Login failed!" && return 0;
 		$Geni::geni = $self;
 		return $self;
 	}
 }
 
-sub get_user {
+sub user {
 	my $self = shift;
 	return $self->{user};
 }
@@ -52,7 +52,7 @@ sub login {
 	return $res->content =~ /home">redirected/;
 }
 
-sub get_tree_conflicts() {
+sub tree_conflicts() {
 	my $self = shift;
 	my $list = Geni::List->new();
 	$self->_populate_tree_conflicts($list) or
@@ -100,7 +100,7 @@ sub _project_get_collaborators_url($) {
 	"https://www.geni.com/api/project-$_[1]/collaborators?only_ids=true";
 }
 # Returns a list of profiles tagged in a project.
-sub _project_get_profiles_url($) {
+sub _project_profiles_url($) {
 	"https://www.geni.com/api/project-$_[1]/profiles?only_ids=true";
 }
 # Returns a list of users following a project.
@@ -177,7 +177,7 @@ sub new {
 	return $self;
 }
 
-sub get_profile {
+sub profile {
 	my $self = shift;
 	if (!$self->{resolved}) {
 		$self->_resolve(
@@ -187,7 +187,7 @@ sub get_profile {
 	return $self->{profile};
 }
 
-sub get_managers {
+sub managers {
 	my $self = shift;
 	if (!$self->{resolved}) {
 		$self->_resolve(
@@ -203,12 +203,12 @@ sub get_managers {
 	return $list;
 }
 
-sub get_type {
+sub type {
 	my $self = shift;
 	return $self->{type};
 }
 
-sub get_actor {
+sub actor {
 	my $self = shift;
 	return Geni::Profile->new(id => $self->{actor});
 }
@@ -217,7 +217,7 @@ sub fetch_list {
 	my $self = shift;
 	if (!$self->{resolved}) {
 		$self->_resolve(
-			$Geni::geni->_profile_get_immediate_family_url($self->get_profile()->get_id())
+			$Geni::geni->_profile_get_immediate_family_url($self->profile()->id())
 		);
 	}
 	if ( defined $self->{spouses} && $self->{spouses}->count() > 0 ) {
@@ -248,8 +248,8 @@ sub _resolve($){
 		if ($nodetype =~ /union-(\d+)/i) {
 			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
 				# if the focal profile is listed as a child in this union
-				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
-					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "child"){
+				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} &&
+					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} eq "child"){
 
 					# if the current profile is a child, we've found a sibling or duplicate of our focal profile
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
@@ -269,8 +269,8 @@ sub _resolve($){
 					}
 
 				# if the focal profile is listed as a partner in this union
-				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} &&
-					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->get_id() }}{"rel"} eq "partner"){
+				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} &&
+					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} eq "partner"){
 
 					# if the current profile is a child, we've found a child of our focal profile
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
@@ -326,89 +326,94 @@ sub new {
 	return $self;
 }
 
-sub get_id {
+sub id {
 	my $self = shift;
 	return $self->{id} ? $self->{id} : $self->{guid};
 }
 
-sub get_first_name {
+sub first_name {
 	my $self = shift;
 	return $self->{first_name};
 }
 
-sub get_middle_name {
+sub middle_name {
 	my $self = shift;
 	return $self->{middle_name};
 }
 
-sub get_last_name {
+sub last_name {
 	my $self = shift;
 	return $self->{last_name};
 }
 
-sub get_maiden_name {
+sub maiden_name {
 	my $self = shift;
 	return $self->{maiden_name};
 }
 
-sub get_display_name {
+sub display_name {
 	my $self = shift;
 	return $self->{name};
 }
 
-sub get_birth_date {
+sub birth_date {
 	my $self = shift;
 	return $self->{birth_date};
 }
 
-sub get_birth_location {
+sub birth_location {
 	my $self = shift;
 	return $self->{birth_location};
 }
 
-sub get_death_date {
+sub death_date {
 	my $self = shift;
 	return $self->{death_date};
 }
 
-sub get_death_location{
+sub death_location{
 	my $self = shift;
 	return $self->{death_location};
 }
 
-sub get_locked {
+sub locked {
 	my $self = shift;
 	return $self->{locked};
 }
 
-sub is_in_big_tree {
+sub big_tree {
 	my $self = shift;
 	return ($self->{big_tree} =~ /true/i);
 }
 
-sub is_claimed {
+sub claimed {
 	my $self = shift;
 	return ($self->{claimed} =~ /true/i);
 }
 
-sub is_public {
+sub public {
 	my $self = shift;
 	return ($self->{public} =~ /true/i);
 }
 
-sub get_gender {
+sub gender {
 	my $self = shift;
 	return $self->{first_name};
 }
 
-sub get_creator {
+sub creator {
 	my $self = shift;
 	return Geni::Profile->new(id => $self->{created_by});
 }
 
-sub get_guid {
+sub guid {
 	my $self = shift;
 	return $self->{guid};
+}
+
+sub managers {
+	my $self = shift;
+	return $self->{managers};
 }
 
 sub _add_managers {
@@ -420,7 +425,7 @@ sub _add_managers {
 sub _check_public {
 	my $self = shift;
 	if (defined $Geni::geni && defined $self->{public} && $self->{public} eq "false") {
-		my $j = $Geni::geni->_post_results($Geni::geni->_check_public_url($self->get_id()));
+		my $j = $Geni::geni->_post_results($Geni::geni->_check_public_url($self->id()));
 		return $j->{public} =~ /true/i;
 	}
 }
@@ -450,17 +455,17 @@ sub add {
 	}
 }
 
-sub get_focus {
+sub focus {
 	my $self = shift;
 	return $self->{focus};
 }
 
-sub get_parents {
+sub parents {
 	my $self = shift;
 	return @{$self->{parents}};
 }
 
-sub get_children {
+sub children {
 	my $self = shift;
 	return @{$self->{childred}};
 }
@@ -530,37 +535,127 @@ Geni::Conflict.
 
 =head1 METHODS
 
-=head2 Geni->new($username, $password)
+=head2 Geni
+
+=head3 Geni->new($username, $password)
 
 Returns a Geni object or 0 if login credentials were not supplied or login
 fails. Optional argument "collaborators" specifies whether to retrieve
 collaborator conflicts or only your own.
 
-=cut
-
-=head2 $geni->get_user()
+=head3 $geni->user()
 
 Get username the script is currently logged in as.
 
-=cut
-
-=head2 $geni->get_tree_conflicts()
+=head3 $geni->tree_conflicts()
 
 Returns a Geni::List of Geni::Conflict objects.  Access by using
 $list->has_next() and $list->next().
 
-	my $list = $geni->conflicts();
-	while(my $conflict = $list->get_next()){
+	my $list = $geni->tree_conflicts();
+	while(my $conflict = $list->next()){
 		# do something
 	}
 
-=cut
+=head2 Geni::Conflict
 
-=head2 $geni->get_user()
+This object should only be created internally by this module. It is used to group profiles that may be duplicates of each other and document the relationships between those profiles.
 
-Returns Geni username.
+=head3 $conflict->profile()
 
-=cut
+Returns a Geni::Profile object describing the focal profile of this conflict.
+
+=head3 $conflict->managers()
+
+TODO: Make sure this is accurate
+
+Returns a Geni::List of Geni::Profile objects describing the managers involved in this conflict.
+
+=head3 $conflict->type()
+
+Returns the type of conflict in the form "parent" or "partner".
+
+=head3 $conflict->actor()
+
+Returns a Geni::Profile describing the last Geni user who acted upon this conflict.
+
+=head3 $conflict->fetch_list()
+
+Returns a Geni::List of Geni::Profile objects describing, respectively, the spouses, parents, children, and siblings of the conflict's focal profile.
+
+=head2 Geni::Profile
+
+Describes a single Geni profile.
+
+=head3 $profile->id()
+
+Get the new-style ID of the profile, which is in the form "profile-0000000000", or if it is not known, the old-style ID, which is in the form "G00000000000000000".
+
+=head3 $profile->first_name()
+=head3 $profile->middle_name()
+=head3 $profile->last_name()
+=head3 $profile->maiden_name()
+=head3 $profile->display_name()
+=head3 $profile->gender()
+=head3 $profile->birth_date()
+=head3 $profile->birth_location()
+=head3 $profile->death_date()
+=head3 $profile->death_location()
+=head3 $profile->locked()
+
+Returns 1 if profile is locked, 0 if profile is not locked.
+
+=head3 $profile->big_tree()
+
+Returns 1 if the profile is in the Big Tree, 0 if it is not. 
+
+=head3 $profile->claimed()
+
+Returns 1 if the profile is claimed, i. e., a living Geni user, 0 if it is not. 
+
+=head3 $profile->public()
+
+Returns 1 if the profile is public, 0 if it is private.
+
+=head3 $profile->creator()
+
+Returns the Geni::Profile of the profile's creator.
+
+=head3 $profile->guid()
+
+Returns the profile's old-style ID in the form "G00000000000000000" if we have it.
+
+=head3 $profile->managers()
+
+TODO: Change this to a Geni::List of Geni::Profile objects.
+
+Returns an array of profile ids representing the managers of the profile.
+
+=head2 Geni::Family
+
+This class may not ever be used and may be deleted.
+
+=head2 Geni::List
+
+TODO: see if there is any need for an existing iterable type class instead of defining our own, and weigh the benefits of an additional dependency.
+
+A class representing an iterable group of items of the same type.
+
+=head3 $list->has_next()
+
+Return 1 if there are items left in the list, 0 if the list is empty.
+
+=head3 $list->next()
+
+Delete and return the next object in the list.
+
+=head3 $list->add()
+
+Add an item to the end of the list.
+
+=head3 $list->count()
+
+Return the number of items remaining in the list.
 
 =head1 SEEALSO
 

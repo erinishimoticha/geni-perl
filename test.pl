@@ -13,19 +13,19 @@ my $geni = new Geni('erin@thespicelands.com', $ARGV[0]) or die $Geni::errstr, "\
 do_tree_conflicts();
 
 sub do_tree_conflicts(){
-	my $conflictlist = $geni->get_tree_conflicts() or die "$Geni::errstr\n";
+	my $conflictlist = $geni->tree_conflicts() or die "$Geni::errstr\n";
 	my $count = 0;
 	while(my $conflict = $conflictlist->get_next()){
 		$count++;
-		my $focus = $conflict->get_profile();
-		print "# new ", $conflict->get_type(), " conflict ############################\n"; 
-		print "Focus:", $focus->get_first_name(), " ", $focus->get_middle_name(), " ",
-			$focus->get_last_name(), "\n";
+		my $focus = $conflict->profile();
+		print "# new ", $conflict->type(), " conflict ############################\n"; 
+		print "Focus:", $focus->first_name(), " ", $focus->middle_name(), " ",
+			$focus->last_name(), "\n";
 		while (my $memberlist = $conflict->fetch_list()) {
 			print "Got ", $memberlist->{type}, "\n";
 			while (my $member = $memberlist->get_next()) {
-				print sprintf("\t%s: %s %s %s\n", $memberlist->{type}, $member->get_first_name(), 
-				$member->get_middle_name(), $member->get_last_name());
+				print sprintf("\t%s: %s %s %s\n", $memberlist->{type}, $member->first_name(), 
+				$member->middle_name(), $member->last_name());
 			}
 		}
 	}
