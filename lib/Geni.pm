@@ -319,9 +319,10 @@ sub new {
 	my $self;
 	$self = { @_ };
 	bless $self, $class;
-	if (defined $self->{public} && $self->{public} eq "false") {
-		$self->_check_public();
-	}
+	# TODO: Do this if the current user is a curator
+	#if (defined $self->{public} && $self->{public} eq "false") {
+	#	$self->_check_public();
+	#}
 	return $self;
 }
 
@@ -420,6 +421,7 @@ sub _check_public {
 	my $self = shift;
 	if (defined $Geni::geni && defined $self->{public} && $self->{public} eq "false") {
 		my $j = $Geni::geni->_post_results($Geni::geni->_check_public_url($self->get_id()));
+		return $j->{public} =~ /true/i;
 	}
 }
 
