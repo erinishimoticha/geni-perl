@@ -21,6 +21,11 @@ This module requires these other modules and libraries:
   LWP::UserAgent
   JSON
 
+SUPPORT
+
+No official support is offered.  Email geni@thespicelands.com and hope for the
+best.
+
 COPYRIGHT AND LICENCE
 
 Copyright (C) 2011 by Erin Spiceland
