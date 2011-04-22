@@ -1,0 +1,6 @@
+Revision history for Perl extension WWW::Geni.
+
+0.01  Thu Apr 21 20:33:18 2011
+	- original version; created by h2xs 1.23 with options
+		-X -n WWW::Geni
+
