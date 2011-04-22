@@ -3,17 +3,18 @@
 print "# BEGIN TEST ############################################################\n";
 
 use WWW::Geni;
+print "WWW::Geni loaded.\n";
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
 print "Using Geni.pm version $Geni::VERSION", "\n";
 
-my $geni = new WWW::Geni('erin@thespicelands.com', $ARGV[0]) or die $Geni::errstr, "\n";
+my $geni = new WWW::Geni('erin@thespicelands.com', $ARGV[0]) or die $WWW::Geni::errstr, "\n";
 
 do_tree_conflicts();
 
 sub do_tree_conflicts(){
-	my $conflictlist = $geni->tree_conflicts() or die "$Geni::errstr\n";
+	my $conflictlist = $geni->tree_conflicts() or die "$WWW::Geni::errstr\n";
 	my $count = 0;
 	while(my $conflict = $conflictlist->get_next()){
 		$count++;

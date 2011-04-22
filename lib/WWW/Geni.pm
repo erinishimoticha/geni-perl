@@ -16,7 +16,7 @@ binmode STDERR, ":utf8";
 ##############################################################################
 {
 package WWW::Geni;
-our $VERSION = '0.01';
+our $VERSION = '0.1.1';
 our $geni;
 # Profile APIs
 # Returns a data structure containing the immediate family of the requested
