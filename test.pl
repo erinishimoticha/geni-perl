@@ -7,7 +7,7 @@ print "WWW::Geni loaded.\n";
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
 
-print "Using Geni.pm version $Geni::VERSION", "\n";
+print "Using Geni.pm version $WWW::Geni::VERSION", "\n";
 
 my $geni = new WWW::Geni('erin@thespicelands.com', $ARGV[0]) or die $WWW::Geni::errstr, "\n";
 
