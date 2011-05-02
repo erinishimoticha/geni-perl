@@ -1,7 +1,7 @@
 --- #YAML:1.0
 name: WWW-Geni
 abstract: Perl extension Geni.com
-version: 0.1.0
+version: 0.2.0
 author:
   - Erin Spiceland <erin@thespicelands.com>
 license: perl
