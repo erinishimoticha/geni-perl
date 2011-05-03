@@ -9,7 +9,10 @@ binmode STDERR, ":utf8";
 
 print "Using Geni.pm version $WWW::Geni::VERSION", "\n";
 
-my $geni = new WWW::Geni('erin@thespicelands.com', $ARGV[0]) or die $WWW::Geni::errstr, "\n";
+my $geni;
+unless ($geni = new WWW::Geni('erin@thespicelands.com', $ARGV[0])) {
+	print $WWW::Geni::errstr, "\n"; exit(0);
+}
 
 do_tree_conflicts();
 
