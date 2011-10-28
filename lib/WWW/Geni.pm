@@ -2,6 +2,7 @@ use 5.001;
 use strict;
 use warnings;
 use HTTP::Cookies;
+use Data::Dumper;
 use HTTP::Response;
 use LWP::UserAgent;
 use JSON;
@@ -23,6 +24,11 @@ our $geni;
 # profile.
 sub new {
 	my $class = shift;
+	if ($#_ < 1) {
+		$WWW::Geni::errstr = "Username and password are required parameters to "
+			. "WWW::Geni::new().";
+		return 0;
+	}
 	my $self = { @_ };
 	($self->{user}, $self->{pass}) = (shift, shift);
 	$self->{json} = new JSON;
@@ -56,11 +62,18 @@ sub tree_conflicts() {
 	my $self = shift;
 	my $list = WWW::Geni::List->new();
 	$self->_populate_tree_conflicts($list) or
-		$WWW::Geni::errstr = "Attempt to [re]populate tree conflict list failed." && return 0;
+		$WWW::Geni::errstr = "Attempt to populate tree conflict list
+			failed." && return 0;
 	return $list;
 }
+# Returns a WWW::Geni::List of WWW::Geni::Profile objects
+sub _profile_get_list(@) {
+	my $self = shift;
+	return "https://www.geni.com/api/profile?ids=" . join(',', @_);
+}
 
-# Returns a data structure containing the immediate family of the requested profile.
+# Returns a data structure containing the immediate family
+# of the requested profile.
 sub _profile_get_immediate_family_url($) {
 	my ($self, $profile) = (shift, shift);
 	$profile = $profile ? $profile : "profile";
@@ -82,7 +95,8 @@ sub _profile_get_data_conflicts_url {
 sub _profile_get_tree_conflicts_url($) {
 	my $self = shift;
 	"https://www.geni.com/api/profile/tree-conflicts?only_ids=true"
-		. ($self->{collaborators} ? "&collaborators=true" : "") . "&page=" . (shift or '1');
+		. ($self->{collaborators} ? "&collaborators=true" : "") . "&page="
+		. (shift or '1');
 }
 # Returns a list of other profiles in our system matching a given profile.
 # Only users who have upgraded to a Geni Pro Account can see this list.
@@ -173,6 +187,7 @@ sub new {
 	$self->{siblings}->{type} = "siblings";
 	$self->{spouses}->{type} = "spouses";
 	$self->{children}->{type} = "children";
+	$self->{'vars'} = {'true' => -1, 'false' => -1};
 	bless $self, $class;
 	return $self;
 }
@@ -233,17 +248,41 @@ sub fetch_list {
 	}
 }
 
+sub _bool($) {
+	my $self = shift;
+	my $str = shift;
+	return ($str =~ /^\s+(true|1|t|yes|on)\s+$/i);
+}
 
 sub _resolve($){
 	my $self = shift;
 	my $url = shift;
-	my (%temp_edges, $temp_profile);
+	my (%temp_edges, $temp_profile, $p);
 	my $j = $WWW::Geni::geni->_get_results($url)
 		or return 0;
-	my @managers = delete @{$j->{focus}->{managers}}[0..5000];
-	$self->{profile} = WWW::Geni::Profile->new(
-			map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}});
-	$self->{profile}->_add_managers(@managers);
+
+	# resolve profiles into a temp object
+	my $purl = $WWW::Geni::geni->_profile_get_list(join(',', keys %{$j->{'nodes'}}, $j->{'profile'}{'id'}));
+	$purl =~ s/union-\d+//ig;
+	$purl =~ s/,+/,/ig;
+
+	my $r = $WWW::Geni::geni->_get_results($purl);
+
+	for (my $i = 0; $i < scalar @{$r->{'results'}}; $i++) {
+		if ($r->{'results'}[$i] && $r->{'results'}[$i]->{'id'}) {
+			$p->{$r->{'results'}[$i]->{'id'}} = $r->{'results'}[$i];
+		}
+	}
+
+	# resolve the conflict
+	my $managers = delete $j->{focus}->{managers};
+	$self->{profile} = ($p->{$j->{focus}{'id'}}
+		? WWW::Geni::Profile->new(%{$p->{$j->{focus}{'id'}}})
+		: WWW::Geni::Profile->new(
+			map { $_, ${$j->{focus}}{$_} } keys %{$j->{focus}}
+		)
+	);
+	$self->{profile}->_add_managers(@{$managers});
 	foreach my $nodetype (keys %{$j->{nodes}}) {
 		if ($nodetype =~ /union-(\d+)/i) {
 			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
@@ -254,16 +293,24 @@ sub _resolve($){
 					# if the current profile is a child, we've found a sibling or duplicate of our focal profile
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = WWW::Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
+						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
+							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+							: WWW::Geni::Profile->new(
+								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+							)
+						);
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{siblings}->add($temp_profile);
 
 					# if the current profile is a child, we've found a parent of our focal profile
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = WWW::Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
+						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
+							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+							: WWW::Geni::Profile->new(
+								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+							)
+						);
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{parents}->add($temp_profile);
 					}
@@ -275,16 +322,24 @@ sub _resolve($){
 					# if the current profile is a child, we've found a child of our focal profile
 					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = WWW::Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
+						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
+							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+							: WWW::Geni::Profile->new(
+								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+							)
+						);
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{children}->add($temp_profile);
 
 					# if the current profile is a child, we've found a spouse or duplicate of our focal profile
 					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
 						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = WWW::Geni::Profile->new(
-							map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}});
+						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
+							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+							: WWW::Geni::Profile->new(
+								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+							)
+						);
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{spouses}->add($temp_profile);
 					}
@@ -328,7 +383,11 @@ sub new {
 
 sub id {
 	my $self = shift;
-	return $self->{id} ? $self->{id} : $self->{guid};
+	return $self->{id};
+}
+sub guid {
+	my $self = shift;
+	return $self->{guid};
 }
 
 sub first_name {
@@ -353,27 +412,180 @@ sub maiden_name {
 
 sub display_name {
 	my $self = shift;
+	if (!$self->{name} || $self->{name} eq '') {
+		$self->{name} = $self->{first_name};
+		if ($self->{middle_name}) {
+			$self->{name} .= ' ';
+			$self->{name} .= $self->{middle_name};
+		}
+		if ($self->{last_name}) {
+			$self->{name} .= ' ';
+			$self->{name} .= $self->{last_name};
+		}
+		if ($self->{maiden_name} && lc($self->{maiden_name})
+			ne lc($self->{last_name})) {
+			$self->{name} .= ' (';
+			$self->{name} .= $self->{middle_name};
+			$self->{name} .= ' )';
+		}
+	}
 	return $self->{name};
 }
 
 sub birth_date {
 	my $self = shift;
-	return $self->{birth_date};
+	my @res;
+	if ($self->{birth} && $self->{birth}{date}) {
+		if ($self->{birth}{date}{month}) {
+			push @res, $self->{birth}{date}{month};
+		}
+		if ($self->{birth}{date}{day}) {
+			push @res, $self->{birth}{date}{day};
+		}
+		if ($self->{birth}{date}{year}) {
+			push @res, $self->{birth}{date}{year};
+		}
+		return join('-', @res);
+	}
+	return '';
+}
+
+sub birth_year {
+	my $self = shift;
+	if ($self->{birth} && $self->{birth}{date}
+		&& $self->{birth}{date}{year}) {
+		return $self->{birth}{date}{year};
+	}
+	return '';
+}
+
+sub birth_month {
+	my $self = shift;
+	if ($self->{birth} && $self->{birth}{date}
+		&& $self->{birth}{date}{month}) {
+		return $self->{birth}{date}{month};
+	}
+	return '';
+}
+
+sub birth_day {
+	my $self = shift;
+	if ($self->{birth} && $self->{birth}{date}
+		&& $self->{birth}{date}{day}) {
+		return $self->{birth}{date}{day};
+	}
+	return '';
+}
+
+sub birth_date_cira {
+	my $self = shift;
+	if ($self->{birth} && $self->{birth}{date}
+		&& $self->{birth}{date}{circa}) {
+		return $self->{birth}{date}{circa};
+	}
+	return '';
 }
 
 sub birth_location {
 	my $self = shift;
-	return $self->{birth_location};
+	my @res;
+	if ($self->{birth} && $self->{birth}{location}) {
+		if ($self->{birth}{location}{city}) {
+			push @res, $self->{birth}{location}{city};
+		}
+		if ($self->{birth}{location}{county}) {
+			push @res, $self->{birth}{location}{city};
+		}
+		if ($self->{birth}{location}{state}) {
+			push @res, $self->{birth}{location}{city};
+		}
+		if ($self->{birth}{location}{country}) {
+			push @res, $self->{birth}{location}{city};
+		}
+		return join('-', @res);
+	} elsif ($self->{birth} && $self->{birth}{location}
+		&& $self->{birth}{location}{place_name}) {
+		return $self->{birth}{location}{place_name};
+	}
+	return '';
 }
 
 sub death_date {
 	my $self = shift;
-	return $self->{death_date};
+	my @res;
+	if ($self->{death} && $self->{death}{date}) {
+		if ($self->{death}{date}{month}) {
+			push @res, $self->{death}{date}{month};
+		}
+		if ($self->{death}{date}{day}) {
+			push @res, $self->{death}{date}{day};
+		}
+		if ($self->{death}{date}{year}) {
+			push @res, $self->{death}{date}{year};
+		}
+		return join('-', @res);
+	}
+	return '';
 }
 
-sub death_location{
+sub death_year {
 	my $self = shift;
-	return $self->{death_location};
+	if ($self->{death} && $self->{death}{date}
+		&& $self->{death}{date}{year}) {
+		return $self->{death}{date}{year};
+	}
+	return '';
+}
+
+sub death_month {
+	my $self = shift;
+	if ($self->{death} && $self->{death}{date}
+		&& $self->{death}{date}{month}) {
+		return $self->{death}{date}{month};
+	}
+	return '';
+}
+
+sub death_day {
+	my $self = shift;
+	if ($self->{death} && $self->{death}{date}
+		&& $self->{death}{date}{day}) {
+		return $self->{death}{date}{day};
+	}
+	return '';
+}
+
+sub death_date_circa {
+	my $self = shift;
+	if ($self->{death} && $self->{death}{date}
+		&& $self->{death}{date}{circa}) {
+		return $self->{death}{date}{circa};
+	}
+	return '';
+}
+
+sub death_location {
+	my $self = shift;
+	my @res;
+	if ($self->{death} && $self->{death}{location}) {
+		if ($self->{death}{location}{city}) {
+			push @res, $self->{death}{location}{city};
+		}
+		if ($self->{death}{location}{county}) {
+			push @res, $self->{death}{location}{city};
+		}
+		if ($self->{death}{location}{state}) {
+			push @res, $self->{death}{location}{city};
+		}
+		if ($self->{death}{location}{country}) {
+			push @res, $self->{death}{location}{city};
+		}
+		return join('-', @res);
+	} elsif ($self->{death} && $self->{death}{location}
+		&& $self->{death}{location}{place_name}) {
+		return $self->{death}{location}{place_name};
+	}
+	return '';
 }
 
 sub locked {
@@ -398,17 +610,12 @@ sub public {
 
 sub gender {
 	my $self = shift;
-	return $self->{first_name};
+	return $self->{gender};
 }
 
 sub creator {
 	my $self = shift;
 	return WWW::Geni::Profile->new(id => $self->{created_by});
-}
-
-sub guid {
-	my $self = shift;
-	return $self->{guid};
 }
 
 sub managers {
