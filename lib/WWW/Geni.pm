@@ -439,7 +439,7 @@ sub birth_date {
 		if ($self->{birth}{date}{month}) {
 			push @res, $self->{birth}{date}{month};
 		}
-		if ($self->{birth}{date}{day}) {
+		if ($self->{birth}{date}{month} && $self->{birth}{date}{day}) {
 			push @res, $self->{birth}{date}{day};
 		}
 		if ($self->{birth}{date}{year}) {
@@ -517,7 +517,7 @@ sub death_date {
 		if ($self->{death}{date}{month}) {
 			push @res, $self->{death}{date}{month};
 		}
-		if ($self->{death}{date}{day}) {
+		if ($self->{death}{date}{month} && $self->{death}{date}{day}) {
 			push @res, $self->{death}{date}{day};
 		}
 		if ($self->{death}{date}{year}) {
