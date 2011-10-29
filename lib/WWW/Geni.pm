@@ -130,7 +130,9 @@ sub _get_results($) {
 	my ($self, $url) = (shift, shift);
 	my $res = $self->{ua}->get($url);
 	if ($res->is_success){
-		return $self->{json}->allow_nonref->relaxed->decode($res->decoded_content);
+		return $self->{json}->allow_nonref->relaxed->decode(
+			$res->decoded_content
+		);
 	} else {
 		$WWW::Geni::errstr = $res->status_line;
 		return 0;
@@ -141,7 +143,9 @@ sub _post_results($) {
 	my ($self, $url) = (shift, shift);
 	my $res = $self->{ua}->post($url);
 	if ($res->is_success){
-		return $self->{json}->allow_nonref->relaxed->decode($res->decoded_content);
+		return $self->{json}->allow_nonref->relaxed->decode(
+			$res->decoded_content
+		);
 	} else {
 		$WWW::Geni::errstr = $res->status_line;
 		return 0;
@@ -232,7 +236,9 @@ sub fetch_list {
 	my $self = shift;
 	if (!$self->{resolved}) {
 		$self->_resolve(
-			$WWW::Geni::geni->_profile_get_immediate_family_url($self->profile()->id())
+			$WWW::Geni::geni->_profile_get_immediate_family_url(
+				$self->profile()->id()
+			)
 		);
 	}
 	if ( defined $self->{spouses} && $self->{spouses}->count() > 0 ) {
@@ -262,7 +268,12 @@ sub _resolve($){
 		or return 0;
 
 	# resolve profiles into a temp object
-	my $purl = $WWW::Geni::geni->_profile_get_list(join(',', keys %{$j->{'nodes'}}, $j->{'profile'}{'id'}));
+	my $purl = $WWW::Geni::geni->_profile_get_list(
+		join(',', keys %{$j->{'nodes'}})
+	);
+	if ($j->{'profile'}{'id'}) {
+		$purl = join(',', $purl, $j->{'profile'}{'id'});
+	}
 	$purl =~ s/union-\d+//ig;
 	$purl =~ s/,+/,/ig;
 
@@ -283,32 +294,48 @@ sub _resolve($){
 		)
 	);
 	$self->{profile}->_add_managers(@{$managers});
-	foreach my $nodetype (keys %{$j->{nodes}}) {
-		if ($nodetype =~ /union-(\d+)/i) {
-			foreach my $member (keys %{$j->{nodes}->{$nodetype}->{edges}}){
+	foreach my $type (keys %{$j->{nodes}}) {
+		if ($type =~ /union-(\d+)/i) {
+			foreach my $mem (keys %{$j->{nodes}->{$type}->{edges}}){
 				# if the focal profile is listed as a child in this union
-				if (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} &&
-					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} eq "child"){
+				if (defined ${$j->{nodes}->{$type}->{edges}->{
+						$self->{profile}->id()
+					}}{"rel"} &&
+					${$j->{nodes}->{$type}->{edges}->{
+						$self->{profile}->id()
+					}}{"rel"} eq "child"){
 
-					# if the current profile is a child, we've found a sibling or duplicate of our focal profile
-					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
-							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+					# if the current profile is a child, we've found a sibling
+					# or duplicate of our focal profile
+					if (${$j->{nodes}->{$type}->{edges}->{$mem}}{"rel"}
+							eq "child") {
+						%temp_edges = %{$j->{nodes}->{$mem}->{edges}};
+						$temp_profile = ($p->{$j->{nodes}->{$mem}->{id}}
+							? WWW::Geni::Profile->new(
+								%{$p->{$j->{nodes}->{$mem}->{id}}}
+							)
 							: WWW::Geni::Profile->new(
-								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+								map {
+									$_, ${$j->{nodes}->{$mem}}{$_}
+								} keys %{$j->{nodes}->{$mem}}
 							)
 						);
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{siblings}->add($temp_profile);
 
-					# if the current profile is a child, we've found a parent of our focal profile
-					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
-						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
-							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+					# if the current profile is a child, we've found a parent
+					# of our focal profile
+					} elsif (${$j->{nodes}->{$type}->{edges}->{$mem}}{"rel"}
+							eq "partner") {
+						%temp_edges = %{$j->{nodes}->{$mem}->{edges}};
+						$temp_profile = ($p->{$j->{nodes}->{$mem}->{id}}
+							? WWW::Geni::Profile->new(
+								%{$p->{$j->{nodes}->{$mem}->{id}}}
+							)
 							: WWW::Geni::Profile->new(
-								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+								map {
+									$_, ${$j->{nodes}->{$mem}}{$_}
+								} keys %{$j->{nodes}->{$mem}}
 							)
 						);
 						%{$temp_profile->{edges}} = %temp_edges;
@@ -316,28 +343,44 @@ sub _resolve($){
 					}
 
 				# if the focal profile is listed as a partner in this union
-				} elsif (defined ${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} &&
-					${$j->{nodes}->{$nodetype}->{edges}->{ $self->{profile}->id() }}{"rel"} eq "partner"){
+				} elsif (defined ${$j->{nodes}->{$type}->{edges}->{
+						$self->{profile}->id()
+					}}{"rel"} &&
+					${$j->{nodes}->{$type}->{edges}->{
+						$self->{profile}->id()
+					}}{"rel"} eq "partner"){
 
-					# if the current profile is a child, we've found a child of our focal profile
-					if (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "child") {
-						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
-							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+					# if the current profile is a child, we've found a child of
+					# our focal profile
+					if (${$j->{nodes}->{$type}->{edges}->{$mem}}{"rel"}
+							eq "child") {
+						%temp_edges = %{$j->{nodes}->{$mem}->{edges}};
+						$temp_profile = ($p->{$j->{nodes}->{$mem}->{id}}
+							? WWW::Geni::Profile->new(
+								%{$p->{$j->{nodes}->{$mem}->{id}}}
+							)
 							: WWW::Geni::Profile->new(
-								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+								map {
+									$_, ${$j->{nodes}->{$mem}}{$_}
+								} keys %{$j->{nodes}->{$mem}}
 							)
 						);
 						%{$temp_profile->{edges}} = %temp_edges;
 						$self->{children}->add($temp_profile);
 
-					# if the current profile is a child, we've found a spouse or duplicate of our focal profile
-					}elsif (${$j->{nodes}->{$nodetype}->{edges}->{$member}}{"rel"} eq "partner") {
-						%temp_edges = %{$j->{nodes}->{$member}->{edges}};
-						$temp_profile = ($p->{$j->{nodes}->{$member}->{id}}
-							? WWW::Geni::Profile->new(%{$p->{$j->{nodes}->{$member}->{id}}})
+					# if the current profile is a child, we've found a spouse
+					# or duplicate of our focal profile
+					} elsif (${$j->{nodes}->{$type}->{edges}->{$mem}}{"rel"}
+							eq "partner") {
+						%temp_edges = %{$j->{nodes}->{$mem}->{edges}};
+						$temp_profile = ($p->{$j->{nodes}->{$mem}->{id}}
+							? WWW::Geni::Profile->new(
+								%{$p->{$j->{nodes}->{$mem}->{id}}}
+							)
 							: WWW::Geni::Profile->new(
-								map { $_, ${$j->{nodes}->{$member}}{$_} } keys %{$j->{nodes}->{$member}}
+								map {
+									$_, ${$j->{nodes}->{$mem}}{$_}
+								} keys %{$j->{nodes}->{$mem}}
 							)
 						);
 						%{$temp_profile->{edges}} = %temp_edges;
@@ -631,8 +674,12 @@ sub _add_managers {
 
 sub _check_public {
 	my $self = shift;
-	if (defined $WWW::Geni::geni && defined $self->{public} && $self->{public} eq "false") {
-		my $j = $WWW::Geni::geni->_post_results($WWW::Geni::geni->_check_public_url($self->id()));
+	if (defined $WWW::Geni::geni
+			&& defined $self->{public}
+			&& $self->{public} eq "false") {
+		my $j = $WWW::Geni::geni->_post_results(
+			$WWW::Geni::geni->_check_public_url($self->id())
+		);
 		return $j->{public} =~ /true/i;
 	}
 }
@@ -697,7 +744,8 @@ sub new {
 sub get_next {
 	my $self = shift;
 	if ($self->count() == 1) {
-		if(${$self->{items}}[0] && ref(${$self->{items}}[0]) eq "WWW::Geni::Conflict"){
+		if(${$self->{items}}[0]
+				&& ref(${$self->{items}}[0]) eq "WWW::Geni::Conflict"){
 			$WWW::Geni::geni->_populate_tree_conflicts($self);
 		}
 	}
