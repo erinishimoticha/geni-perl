@@ -106,7 +106,7 @@ sub _profile_get_tree_matches_url($) {
 # Will merge two profiles together if you have permission, or it will create a
 # requested merge if you don’t have edit permission on both profiles.
 sub _profile_do_merge_url($$) {
-	"https://www.geni.com/api/$_[1]/merge/$_[2]?only_ids=true";
+	"https://www.geni.com/api/$_[1]/merge/$_[2]";
 }
 # Project APIs
 # Returns a list of users collaborating on a project.
@@ -670,6 +670,21 @@ sub _add_managers {
 	my $self = shift;
 	push @{$self->{managers}}, @_;
 	return $self;
+}
+
+sub do_merge {
+	my $self = shift;
+	my $profile_to_merge = shift;
+	my $url = $WWW::Geni::geni->_profile_do_merge_url(
+			$self->{id}, $profile_to_merge->{id}
+		);
+	print STDERR "merge url is $url\n";
+	if (my $j = $WWW::Geni::geni->_post_results()) {
+		print STDERR "merge json ", Data::Dumper::Dumper($j);
+	} else {
+		print STDERR "couldn't merge: ", $WWW::Geni::errstr, "\n";
+	}
+	exit();
 }
 
 sub _check_public {
