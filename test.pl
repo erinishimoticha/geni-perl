@@ -10,8 +10,12 @@ binmode STDERR, ":utf8";
 print "Using Geni.pm version $WWW::Geni::VERSION", "\n";
 
 my $geni;
-unless ($geni = new WWW::Geni('erin@thespicelands.com', $ARGV[0])) {
-	print $WWW::Geni::errstr, "\n"; exit(0);
+unless ($geni = new WWW::Geni({
+	'user' => 'erin@thespicelands.com',
+	'pass' => $ARGV[0],
+	'client_id' => 'CNctlukY0zCX8sD6ChA4Snrf2BubwL6CGctgkx4U'
+})) {
+	print "Not logged in. $WWW::Geni::errstr\n"; exit(0);
 }
 
 do_tree_conflicts();

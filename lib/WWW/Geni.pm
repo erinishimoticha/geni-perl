@@ -24,13 +24,7 @@ our $geni;
 # profile.
 sub new {
 	my $class = shift;
-	if ($#_ < 1) {
-		$WWW::Geni::errstr = "Username and password are required parameters to "
-			. "WWW::Geni::new().";
-		return 0;
-	}
-	my $self = { @_ };
-	($self->{user}, $self->{pass}) = (shift, shift);
+	my $self = shift;
 	$self->{json} = new JSON;
 	if (!$self->{user} || !$self->{pass}){
 		$WWW::Geni::errstr = "Username and password are required parameters to "
@@ -52,10 +46,65 @@ sub user {
 sub login {
 	my $self = shift;
 	$self->{ua} = LWP::UserAgent->new();
-	$self->{ua}->cookie_jar(HTTP::Cookies->new());
-	my $res = $self->{ua}->post("https://www.geni.com/login/in?username="
-		. $self->{user} . "&password=" . $self->{pass});
-	return $res->content =~ /home">redirected/;
+	#$self->{ua}->cookie_jar(HTTP::Cookies->new());
+
+	#my $res = $self->{ua}->post("https://www.geni.com/login/in?username="
+	#	. $self->{user} . "&password=" . $self->{pass});
+
+	#$res = $self->{ua}->get(join('', 
+	#	"https://www.geni.com/platform/oauth/authorize?client_id=",
+	#	$self->{client_id}, "&response_type=token&display=desktop")); 
+
+	#$res = $self->{ua}->post(join('',
+	#	'https://www.geni.com/platform/oauth/authorize?',
+	#	'response_type=token&client_id=', $self->{'client_id'},
+	#	'&display=desktop&authorize=1'
+	#));
+	my $res = $self->{ua}->post(
+		sprintf(
+			"https://www.geni.com/platform/oauth/request_token?"
+			. "username=%s&password=%s&client_id=%s&grant_type=%s",
+			$self->{user}, $self->{pass}, $self->{'client_id'}, 'password'
+		)
+	);
+	if ($res->is_success) {
+		my $temp = $self->{json}->allow_nonref->relaxed->decode(
+            $res->decoded_content
+        );
+        $self->{access_token} = $temp->{'access_token'};
+        $self->{expires_in} = $temp->{'expires_in'};
+        $self->{refresh_token} = $temp->{'refresh_token'};
+        $self->{login_type} = 'trusted';
+		return 1;
+	} else {
+        $WWW::Geni::errstr = $res->status_line;
+        return 0;
+    }
+}
+
+sub login_app {
+	my $self = shift;
+	my $app_id = shift;
+	my $app_secret = shift;
+	my $res = $self->{ua}->post(
+        sprintf(
+            "https://www.geni.com/platform/oauth/request_token?client_id=%s&"
+			. "client_secret=%s&grant_type=client_credentials",
+            $app_id, $app_secret
+        )
+    );
+	if ($res->is_success) {
+		my $temp = $self->{json}->allow_nonref->relaxed->decode(
+			$res->decoded_content
+		);
+		$self->{access_token} = $temp->{'access_token'};
+		$self->{expires_in} = $temp->{'expires_in'};
+		$self->{refresh_token} = $temp->{'refresh_token'};
+		$self->{login_type} = 'app';
+	} else {
+		$WWW::Geni::errstr = $res->status_line;
+		return 0;
+	}
 }
 
 sub tree_conflicts() {
@@ -141,7 +190,12 @@ sub _get_results($) {
 
 sub _post_results($) {
 	my ($self, $url) = (shift, shift);
-	my $res = $self->{ua}->post($url);
+	my $res;
+	if ($self->{'access_token'}) {
+		$res = $self->{ua}->post($url, 'access_token' => $self->{'access_token'});
+	} else {
+		$res = $self->{ua}->post($url);
+	}
 	if ($res->is_success){
 		return $self->{json}->allow_nonref->relaxed->decode(
 			$res->decoded_content
