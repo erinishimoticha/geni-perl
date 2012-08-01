@@ -26,9 +26,8 @@ sub new {
 	my $class = shift;
 	my $self = shift;
 	$self->{json} = new JSON;
-	if (!$self->{user} || !$self->{pass}){
-		$WWW::Geni::errstr = "Username and password are required parameters to "
-			. "WWW::Geni::new().";
+	if (!$self->{user} || !$self->{pass} || $self->{client_id}){
+		$WWW::Geni::errstr = "user, pass, and client_id are required parameters"			" to WWW::Geni::new().";
 		return 0;
 	} else {
 		bless $self, $class;
@@ -70,7 +69,7 @@ sub login {
 		sprintf(
 			"https://www.geni.com/platform/oauth/request_token?"
 			. "username=%s&password=%s&client_id=%s&grant_type=%s",
-			$self->{user}, $self->{pass}, $self->{'client_id'}, 'password'
+			$self->{user}, $self->{pass}, $self->{client_id}, 'password'
 		)
 	);
 	if ($res->is_success) {
@@ -92,6 +91,10 @@ sub login_app {
 	my $self = shift;
 	my $app_id = shift;
 	my $app_secret = shift;
+	if (!$self->{client_secret}) {
+		$WWW::Geni::errstr="client_id param to new() required for login_app().";
+		return 0;
+	}
 	my $res = $self->{ua}->post(
         sprintf(
             "https://www.geni.com/platform/oauth/request_token?client_id=%s&"
