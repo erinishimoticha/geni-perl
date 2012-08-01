@@ -46,21 +46,27 @@ sub user {
 sub login {
 	my $self = shift;
 	$self->{ua} = LWP::UserAgent->new();
-	#$self->{ua}->cookie_jar(HTTP::Cookies->new());
+	$self->{ua}->cookie_jar(HTTP::Cookies->new());
 
-	#my $res = $self->{ua}->post("https://www.geni.com/login/in?username="
-	#	. $self->{user} . "&password=" . $self->{pass});
-
-	#$res = $self->{ua}->get(join('', 
-	#	"https://www.geni.com/platform/oauth/authorize?client_id=",
-	#	$self->{client_id}, "&response_type=token&display=desktop")); 
-
-	#$res = $self->{ua}->post(join('',
-	#	'https://www.geni.com/platform/oauth/authorize?',
-	#	'response_type=token&client_id=', $self->{'client_id'},
-	#	'&display=desktop&authorize=1'
-	#));
 	my $res = $self->{ua}->post(
+		sprintf('https://www.geni.com/login/in?username=%s&password=%s',
+			$self->{user}, $self->{pass})
+	);
+	# Check the location of the expected redirect to make sure it
+	# doesn't go back to the login page.
+	if ($res->code eq "302") {
+		if ($res->header('location') =~ /login/i) {
+			$WWW::Geni::errstr = "Authenication failed.";
+			return 0;
+		}
+	} else {
+		$WWW::Geni::errstr = $res->status_line
+			|| "Unknown error attempting login POST";
+		return 0;
+	}
+
+
+	$res = $self->{ua}->post(
 		sprintf(
 			"https://www.geni.com/platform/oauth/request_token?"
 			. "username=%s&password=%s&client_id=%s&grant_type=%s",
@@ -110,9 +116,10 @@ sub login_app {
 sub tree_conflicts() {
 	my $self = shift;
 	my $list = WWW::Geni::List->new();
-	$self->_populate_tree_conflicts($list) or
-		$WWW::Geni::errstr = "Attempt to populate tree conflict list
-			failed." && return 0;
+	unless ($self->_populate_tree_conflicts($list)) {
+		$WWW::Geni::errstr = "Attempt to populate tree conflict list failed.";
+		return 0;
+	}
 	return $list;
 }
 # Returns a WWW::Geni::List of WWW::Geni::Profile objects
@@ -178,12 +185,12 @@ sub _check_public_url($) {
 sub _get_results($) {
 	my ($self, $url) = (shift, shift);
 	my $res = $self->{ua}->get($url);
-	if ($res->is_success){
+	if ($res->message eq "OK"){
 		return $self->{json}->allow_nonref->relaxed->decode(
 			$res->decoded_content
 		);
 	} else {
-		$WWW::Geni::errstr = $res->status_line;
+		$WWW::Geni::errstr = $res->status_line || "Unknown error in GET.";
 		return 0;
 	}
 }
@@ -192,7 +199,7 @@ sub _post_results($) {
 	my ($self, $url) = (shift, shift);
 	my $res;
 	if ($self->{'access_token'}) {
-		$res = $self->{ua}->post($url, 'access_token' => $self->{'access_token'});
+		$res = $self->{ua}->post($url, 'access_token'=>$self->{'access_token'});
 	} else {
 		$res = $self->{ua}->post($url);
 	}
@@ -201,7 +208,7 @@ sub _post_results($) {
 			$res->decoded_content
 		);
 	} else {
-		$WWW::Geni::errstr = $res->status_line;
+		$WWW::Geni::errstr = $res->status_line || "Unknown error in POST.";
 		return 0;
 	}
 }
@@ -209,19 +216,20 @@ sub _post_results($) {
 sub _populate_tree_conflicts($$){
 	my ($self, $list) = (shift, shift);
 	my $j = $self->_get_results(
-			$list->{next_page_url} or $self->_profile_get_tree_conflicts_url(1)
-		) or return 0;
+		$list->{next_page_url} || $self->_profile_get_tree_conflicts_url(1)
+	);
 	foreach(@{$j->{results}}){
 		my $c = WWW::Geni::Conflict->new(
 			focus => $_->{profile},
 			type => $_->{issue_type},
 			actor => $_->{actor}
 		);
-		$c->_add_managers(@{$_->{managers}}); 
+		$c->_add_managers(@{$_->{managers}});
 		$list->add($c);
 	}
 	$list->{cur_page_num} = $j->{page};
 	$list->{next_page_url} = $j->{next_page};
+	return 1;
 }
 
 } # end WWW::Geni class
