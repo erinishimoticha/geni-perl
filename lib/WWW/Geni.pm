@@ -27,7 +27,8 @@ sub new {
 	my $self = shift;
 	$self->{json} = new JSON;
 	if (!$self->{user} || !$self->{pass} || $self->{client_id}){
-		$WWW::Geni::errstr = "user, pass, and client_id are required parameters"			" to WWW::Geni::new().";
+		$WWW::Geni::errstr = "user, pass, and client_id are required parameters"
+			. " to WWW::Geni::new().";
 		return 0;
 	} else {
 		bless $self, $class;
@@ -118,8 +119,9 @@ sub login_app {
 
 sub tree_conflicts() {
 	my $self = shift;
+	my $page = shift;
 	my $list = WWW::Geni::List->new();
-	unless ($self->_populate_tree_conflicts($list)) {
+	unless ($self->_populate_tree_conflicts($list, $page || 1)) {
 		$WWW::Geni::errstr = "Attempt to populate tree conflict list failed.";
 		return 0;
 	}
@@ -217,9 +219,9 @@ sub _post_results($) {
 }
 
 sub _populate_tree_conflicts($$){
-	my ($self, $list) = (shift, shift);
+	my ($self, $list, $page) = (shift, shift, shift);
 	my $j = $self->_get_results(
-		$list->{next_page_url} || $self->_profile_get_tree_conflicts_url(1)
+		$list->{next_page_url} || $self->_profile_get_tree_conflicts_url($page || 1)
 	);
 	foreach(@{$j->{results}}){
 		my $c = WWW::Geni::Conflict->new(
@@ -818,6 +820,7 @@ sub new {
 	my $self = {};
 	@{$self->{items}} = @_;
 	bless $self, $class;
+	$self->{current_page} = 0;
 	return $self;
 }
 
