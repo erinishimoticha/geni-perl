@@ -26,7 +26,7 @@ sub new {
 	my $class = shift;
 	my $self = shift;
 	$self->{json} = new JSON;
-	if (!$self->{user} || !$self->{pass} || $self->{client_id}){
+	if (!$self->{user} || !$self->{pass} || !$self->{client_id}){
 		$WWW::Geni::errstr = "user, pass, and client_id are required parameters"
 			. " to WWW::Geni::new().";
 		return 0;
