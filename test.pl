@@ -13,7 +13,7 @@ my $geni;
 unless ($geni = new WWW::Geni({
 	'user' => 'erin@thespicelands.com',
 	'pass' => $ARGV[0],
-	'client_id' => 'CNctlukY0zCX8sD6ChA4Snrf2BubwL6CGctgkx4U'
+	'client_id' => $ARGV[1]
 })) {
 	print "Not logged in. $WWW::Geni::errstr\n"; exit(0);
 }
